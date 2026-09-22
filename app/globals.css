@@ -1,26 +1,112 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
+/* ── Google Fonts ─────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+/* ── Design Tokens (CSS Custom Properties) ────────────────────────────
+   See DESIGN.md for rationale behind each token.
+   Palette: dark, ink-based, warm amber accent.
+   ───────────────────────────────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Backgrounds */
+  --bg-base: #12141a;
+  --bg-surface: #1b1e27;
+  --bg-surface-2: #242835;
+
+  /* Borders */
+  --border: #2e3341;
+
+  /* Text */
+  --text-primary: #edede6;
+  --text-secondary: #9a9ca8;
+
+  /* Accents */
+  --accent-amber: #d6a94a;
+  --accent-sage: #5fa88b;
+  --accent-brick: #c15b4e;
 }
 
+/* ── Tailwind v4 Theme Extension ──────────────────────────────────────
+   Maps CSS custom properties to Tailwind utility classes.
+   Usage: bg-base, text-primary, border-border, text-accent-amber, etc.
+   ───────────────────────────────────────────────────────────────────── */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Colors */
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-surface-2: var(--bg-surface-2);
+  --color-border: var(--border);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-accent-amber: var(--accent-amber);
+  --color-accent-sage: var(--accent-sage);
+  --color-accent-brick: var(--accent-brick);
+
+  /* Font families */
+  --font-heading: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Code', 'Source Code Pro',
+    monospace;
+
+  /* Type scale — intentional steps, not Tailwind defaults
+     Format: font-size / line-height */
+  --text-display: 2.25rem;
+  --text-display--line-height: 1.2;
+  --text-title: 1.5rem;
+  --text-title--line-height: 1.3;
+  --text-heading: 1.125rem;
+  --text-heading--line-height: 1.4;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.6;
+  --text-caption: 0.8125rem;
+  --text-caption--line-height: 1.5;
+  --text-code: 0.8125rem;
+  --text-code--line-height: 1.6;
+  --text-data: 1.125rem;
+  --text-data--line-height: 1.3;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ── Base Styles ──────────────────────────────────────────────────────── */
+html {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Selection ─────────────────────────────────────────────────────── */
+::selection {
+  background-color: color-mix(in srgb, var(--accent-amber) 30%, transparent);
+  color: var(--text-primary);
+}
+
+/* ── Scrollbar (Webkit) ────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* ── Focus ring ────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent-amber);
+  outline-offset: 2px;
 }
