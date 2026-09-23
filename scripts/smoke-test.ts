@@ -9,7 +9,11 @@
  * Run: npm run smoke-test
  */
 
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load .env.local (Next.js convention for local secrets)
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
 const REQUIRED_ENV_VARS = [
   'GITHUB_APP_ID',
@@ -21,9 +25,13 @@ const REQUIRED_ENV_VARS = [
   'DATABASE_URL',
   'NEXT_PUBLIC_SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
-  'ANTHROPIC_API_KEY',
-  'VOYAGE_API_KEY',
   'NEXTAUTH_SECRET',
+] as const;
+
+// These are wired but not needed until later phases
+const OPTIONAL_ENV_VARS = [
+  'ANTHROPIC_API_KEY',  // Phase 4
+  'VOYAGE_API_KEY',     // Phase 3
 ] as const;
 
 async function checkEnvVars(): Promise<boolean> {
@@ -40,12 +48,21 @@ async function checkEnvVars(): Promise<boolean> {
     }
   }
 
+  for (const key of OPTIONAL_ENV_VARS) {
+    const value = process.env[key];
+    if (!value || value.trim() === '') {
+      console.log(`  ○ ${key} — not set (optional, needed later)`);
+    } else {
+      console.log(`  ✓ ${key}`);
+    }
+  }
+
   if (missing.length > 0) {
-    console.log(`\n  ⚠ ${missing.length} variable(s) missing.`);
+    console.log(`\n  ⚠ ${missing.length} required variable(s) missing.`);
     return false;
   }
 
-  console.log('\n  ✓ All environment variables present.');
+  console.log('\n  ✓ All required environment variables present.');
   return true;
 }
 
@@ -61,6 +78,13 @@ async function checkSupabase(): Promise<boolean> {
   }
 
   try {
+    // Polyfill WebSocket for Node 18 (Supabase v2.116+ requires it)
+    if (typeof globalThis.WebSocket === 'undefined') {
+      const ws = await import('ws');
+      // @ts-expect-error — polyfill global WebSocket for Supabase realtime
+      globalThis.WebSocket = ws.default;
+    }
+
     const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(url, key, {
       auth: { autoRefreshToken: false, persistSession: false },
