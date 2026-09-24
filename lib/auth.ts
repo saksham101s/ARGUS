@@ -20,5 +20,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   ],
   pages: {
     signIn: '/sign-in',
+    error: '/sign-in',
+  },
+  trustHost: true,
+  callbacks: {
+    async session({ session, token }) {
+      // Pass GitHub user ID into the session for future use
+      if (token?.sub) {
+        session.user.id = token.sub;
+      }
+      return session;
+    },
   },
 });
