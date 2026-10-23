@@ -20,7 +20,9 @@ function getAppConfig() {
     );
   }
 
-  return { appId, privateKey };
+  // Hosting dashboards (Vercel, etc.) often store the PEM on one line with
+  // literal "\n" sequences — restore real newlines so the key parses.
+  return { appId, privateKey: privateKey.replace(/\\n/g, '\n') };
 }
 
 /**
@@ -33,9 +35,7 @@ function getAppConfig() {
  *
  * @param installationId - The numeric ID of the GitHub App installation
  */
-export async function getInstallationClient(
-  installationId: number,
-): Promise<Octokit> {
+export async function getInstallationClient(installationId: number): Promise<Octokit> {
   const { appId, privateKey } = getAppConfig();
 
   const octokit = new Octokit({

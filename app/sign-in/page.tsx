@@ -8,8 +8,7 @@ export default function SignInPage() {
           <span className="text-accent-amber">argus</span>
         </h1>
         <p className="text-body text-text-secondary mb-8 max-w-sm">
-          AI code review with full-codebase context. Sign in with GitHub to get
-          started.
+          AI code review with full-codebase context. Sign in with GitHub to get started.
         </p>
 
         <form
@@ -46,17 +45,13 @@ export default function SignInPage() {
         <div className="mt-12 border border-border rounded-md bg-bg-surface p-4 max-w-sm">
           <pre className="font-mono text-code text-text-secondary leading-relaxed">
             <span className="text-accent-amber">{'// '}</span>
-            <span className="text-text-secondary">
-              reviewing pull request #42
-            </span>
+            <span className="text-text-secondary">reviewing pull request #42</span>
             {'\n'}
             <span className="text-accent-sage">{'+ '}</span>
             <span className="text-text-primary">context: full repository</span>
             {'\n'}
             <span className="text-accent-amber">{'~ '}</span>
-            <span className="text-text-secondary">
-              not just the diff
-            </span>
+            <span className="text-text-secondary">not just the diff</span>
           </pre>
         </div>
       </div>

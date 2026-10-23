@@ -17,12 +17,16 @@ export function verifyWebhookSignature(
   signature: string,
   secret: string,
 ): boolean {
-  const expected = `sha256=${createHmac('sha256', secret).update(payload).digest('hex')}`;
+  const expected = Buffer.from(
+    `sha256=${createHmac('sha256', secret).update(payload).digest('hex')}`,
+  );
+  const received = Buffer.from(signature);
 
-  // Both must be the same length for timingSafeEqual
-  if (signature.length !== expected.length) {
+  // timingSafeEqual throws on unequal byte lengths. Compare bytes, not
+  // string length — a multi-byte character would otherwise slip through.
+  if (received.length !== expected.length) {
     return false;
   }
 
-  return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  return timingSafeEqual(received, expected);
 }

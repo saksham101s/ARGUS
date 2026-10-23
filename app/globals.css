@@ -1,6 +1,5 @@
 @import 'tailwindcss';
 
-
 /* ── Design Tokens (CSS Custom Properties) ────────────────────────────
    See DESIGN.md for rationale behind each token.
    Palette: dark, ink-based, warm amber accent.
@@ -42,8 +41,8 @@
 
   /* Font families */
   --font-heading: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Code', 'Source Code Pro',
-    monospace;
+  --font-mono:
+    'IBM Plex Mono', ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
 
   /* Type scale — intentional steps, not Tailwind defaults
      Format: font-size / line-height */

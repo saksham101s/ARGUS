@@ -30,8 +30,8 @@ const REQUIRED_ENV_VARS = [
 
 // These are wired but not needed until later phases
 const OPTIONAL_ENV_VARS = [
-  'ANTHROPIC_API_KEY',  // Phase 4
-  'VOYAGE_API_KEY',     // Phase 3
+  'ANTHROPIC_API_KEY', // Phase 4
+  'VOYAGE_API_KEY', // Phase 3
 ] as const;
 
 async function checkEnvVars(): Promise<boolean> {
@@ -66,40 +66,21 @@ async function checkEnvVars(): Promise<boolean> {
   return true;
 }
 
+// The checks below import the app's own clients (dynamically, so dotenv
+// has populated process.env first) — a passing smoke test means the code
+// paths the webhook uses actually work, not a parallel copy of them.
+
 async function checkSupabase(): Promise<boolean> {
   console.log('\n─── Check 2: Supabase Connection ───');
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !key) {
-    console.log('  ✗ Supabase credentials not configured — skipping.');
-    return false;
-  }
-
   try {
-    // Polyfill WebSocket for Node 18 (Supabase v2.116+ requires it)
-    if (typeof globalThis.WebSocket === 'undefined') {
-      const ws = await import('ws');
-      // @ts-expect-error — polyfill global WebSocket for Supabase realtime
-      globalThis.WebSocket = ws.default;
-    }
-
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(url, key, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-
-    // Simple query to verify connection — list tables from the schema
-    const { data, error } = await supabase
+    const { getSupabaseClient } = await import('../lib/db/client');
+    const { error } = await getSupabaseClient()
       .from('installations')
       .select('id')
       .limit(1);
 
-    if (error && error.code !== 'PGRST116') {
-      // PGRST116 = "no rows" which is fine for an empty table
-      throw error;
-    }
+    if (error) throw error;
 
     console.log('  ✓ Supabase connection successful.');
     return true;
@@ -112,26 +93,9 @@ async function checkSupabase(): Promise<boolean> {
 async function checkGitHubApp(): Promise<boolean> {
   console.log('\n─── Check 3: GitHub App Authentication ───');
 
-  const appId = process.env.GITHUB_APP_ID;
-  const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
-
-  if (!appId || !privateKey) {
-    console.log('  ✗ GitHub App credentials not configured — skipping.');
-    return false;
-  }
-
   try {
-    const { Octokit } = await import('@octokit/rest');
-    const { createAppAuth } = await import('@octokit/auth-app');
-
-    const octokit = new Octokit({
-      authStrategy: createAppAuth,
-      auth: { appId, privateKey },
-    });
-
-    // Authenticate as the app and list installations
-    const { data: installations } =
-      await octokit.apps.listInstallations();
+    const { getAppClient } = await import('../lib/github/app');
+    const { data: installations } = await getAppClient().apps.listInstallations();
     console.log(
       `  ✓ GitHub App authenticated. ${installations.length} installation(s) found.`,
     );
@@ -144,9 +108,7 @@ async function checkGitHubApp(): Promise<boolean> {
 
     return true;
   } catch (err) {
-    console.log(
-      `  ✗ GitHub App authentication failed: ${(err as Error).message}`,
-    );
+    console.log(`  ✗ GitHub App authentication failed: ${(err as Error).message}`);
     return false;
   }
 }
@@ -156,11 +118,8 @@ async function main() {
   console.log('║       Argus — Smoke Test             ║');
   console.log('╚══════════════════════════════════════╝');
 
-  const results = await Promise.all([
-    checkEnvVars(),
-    checkSupabase(),
-    checkGitHubApp(),
-  ]);
+  // Sequential so each check's output stays grouped under its heading.
+  const results = [await checkEnvVars(), await checkSupabase(), await checkGitHubApp()];
 
   const passed = results.filter(Boolean).length;
   const total = results.length;

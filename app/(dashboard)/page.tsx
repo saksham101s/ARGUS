@@ -5,8 +5,7 @@ export default function DashboardPage() {
         Repositories
       </h1>
       <p className="text-body text-text-secondary mb-8">
-        Install Argus on a repository to start receiving AI-powered code
-        reviews.
+        Install Argus on a repository to start receiving AI-powered code reviews.
       </p>
 
       {/* Empty state — stub for now, will be replaced with real repo list */}

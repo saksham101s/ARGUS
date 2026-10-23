@@ -20,11 +20,7 @@ export const metadata: Metadata = {
     'An AI code reviewer that indexes the whole repository, not just the diff, so it catches issues that only make sense in context.',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
