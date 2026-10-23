@@ -23,11 +23,14 @@
 - [x] Supabase project restored (2026-10-23); smoke test 3/3.
 - [x] Migration 003 applied (verified: new `reviews` columns exist).
 - [x] App installed on `saksham101s` (installation 174576465, 20 repos incl. ARGUS).
-- [ ] **Deploy Phase 2 code.** The App's webhook URL points at Vercel
-      (`argus-sooty-eight.vercel.app`), which still runs commit 588a850 — it
-      answered the `installation.created` delivery with "ignored", so the DB
-      has 0 rows. After deploying: GitHub App → Advanced → Recent Deliveries →
-      **Redeliver** that `installation.created` to backfill all 20 repos.
+- [x] Phase 2 deployed to Vercel (392fd92); signed `ping` → `pong` verified.
+- [ ] **Replace `SUPABASE_SERVICE_ROLE_KEY`** — it holds the *publishable*
+      key (`sb_publishable_…`). Worked only because RLS was off; since
+      migration 003 every write fails (42501 RLS violation → webhook 500).
+      Put the **secret** key (`sb_secret_…`, Supabase → Project Settings →
+      API Keys) in `.env.local` **and** Vercel env, then redeploy.
+- [ ] Then redeliver `installation.created` (GitHub App → Advanced → Recent
+      Deliveries) to backfill the 20 repos.
 - [ ] Confirm Vercel has all env vars from `.env.example` set.
 - [ ] Open a test PR on a repo to exercise the full Phase 2 path.
 - [ ] Consider upgrading local Node to 22 (supabase-js deprecates Node 20).
@@ -77,6 +80,11 @@ event settings, and `GET /app` only lists `pull_request`. That's expected.
 - `lib/github/manifest.ts` URLs are localhost-only.
 
 ## Changelog
+
+### 2026-10-23 — Deploy check (Claude)
+- Found `SUPABASE_SERVICE_ROLE_KEY` was the publishable key (RLS exposed it).
+  `getSupabaseClient()` now rejects publishable/anon keys with a clear error,
+  so the smoke test fails loudly instead of passing on empty reads.
 
 ### 2026-10-23 — Phase 1 hardening + Phase 2 completion (Claude)
 Phase 1 fixes:

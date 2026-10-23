@@ -31,6 +31,15 @@ export function getSupabaseClient(): SupabaseClient {
     );
   }
 
+  // A public key here fails silently on reads (RLS returns no rows) and
+  // with a confusing RLS error on writes — reject it up front instead.
+  if (isPublicKey(key)) {
+    throw new Error(
+      'SUPABASE_SERVICE_ROLE_KEY is a public (publishable/anon) key. Use the ' +
+        'secret key: Supabase → Project Settings → API Keys → sb_secret_…',
+    );
+  }
+
   client = createClient(url, key, {
     auth: {
       autoRefreshToken: false,
@@ -43,4 +52,16 @@ export function getSupabaseClient(): SupabaseClient {
   });
 
   return client;
+}
+
+/** True for new-style publishable keys and legacy JWT keys with role "anon". */
+function isPublicKey(key: string): boolean {
+  if (key.startsWith('sb_publishable_')) return true;
+  if (!key.startsWith('eyJ')) return false;
+  try {
+    const claims = JSON.parse(Buffer.from(key.split('.')[1], 'base64url').toString());
+    return claims.role === 'anon';
+  } catch {
+    return false;
+  }
 }
