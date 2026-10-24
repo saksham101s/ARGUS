@@ -27,14 +27,15 @@ export const GITHUB_APP_MANIFEST = {
   /**
    * Webhook events the app subscribes to.
    * - pull_request: fires on PR open, sync, close, etc.
-   * - installation: fires when the app is installed/uninstalled/suspended
-   * - installation_repositories: fires when repos are added to/removed from
-   *   an existing installation
+   * - push: keeps the code index in sync with the default branch
+   *
+   * installation / installation_repositories are delivered to every App
+   * automatically and are not listed here.
    *
    * NOTE: changing this only affects newly created apps. For the existing
    * app, tick these events under App settings → Permissions & events.
    */
-  default_events: ['pull_request', 'installation', 'installation_repositories'],
+  default_events: ['pull_request', 'push'],
 
   /**
    * Repository permissions.

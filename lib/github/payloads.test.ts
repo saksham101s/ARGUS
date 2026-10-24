@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   parseInstallationEvent,
   parsePullRequestEvent,
+  parsePushEvent,
   type WebhookPayload,
 } from './payloads';
 
@@ -119,4 +120,31 @@ test('installation events without an id are invalid', () => {
     parseInstallationEvent('installation', { action: 'created' }).kind,
     'invalid',
   );
+});
+
+const pushPayload = (overrides: Partial<WebhookPayload> = {}): WebhookPayload => ({
+  ref: 'refs/heads/main',
+  after: 'abc123',
+  installation: { id: 7 },
+  repository: { id: 10, full_name: 'acme/widget', default_branch: 'main' },
+  ...overrides,
+});
+
+test('push to the default branch is accepted', () => {
+  const result = parsePushEvent(pushPayload());
+  assert.equal(result.kind, 'ok');
+  if (result.kind !== 'ok') return;
+  assert.equal(result.data.headSha, 'abc123');
+  assert.equal(result.data.repo.owner, 'acme');
+});
+
+test('push to another branch or a branch deletion is ignored', () => {
+  assert.equal(parsePushEvent(pushPayload({ ref: 'refs/heads/feature' })).kind, 'ignore');
+  assert.equal(parsePushEvent(pushPayload({ ref: 'refs/tags/v1' })).kind, 'ignore');
+  assert.equal(parsePushEvent(pushPayload({ deleted: true })).kind, 'ignore');
+  assert.equal(parsePushEvent(pushPayload({ after: '0'.repeat(40) })).kind, 'ignore');
+});
+
+test('push without installation or repo is invalid', () => {
+  assert.equal(parsePushEvent(pushPayload({ installation: undefined })).kind, 'invalid');
 });

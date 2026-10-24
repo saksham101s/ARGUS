@@ -11,7 +11,8 @@
     "format:check": "prettier --check .",
     "smoke-test": "tsx scripts/smoke-test.ts",
     "test": "tsx --test lib/*/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "index-repo": "tsx scripts/index-repo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

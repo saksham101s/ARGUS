@@ -21,6 +21,7 @@ comments and stored for a dashboard.
 | GitHub API | Octokit authenticated as the **GitHub App** (JWT → installation token) | `lib/github/app.ts` |
 | Database | Supabase Postgres + pgvector, accessed **only** with the service-role key | `lib/db/*` |
 | Background work | Next.js `after()` inside the webhook request (`maxDuration = 300`) | `lib/review/pipeline.ts` |
+| Code index (RAG) | Git Trees/Blobs API → heuristic chunker → Voyage `voyage-code-3` (1024-d) → pgvector | `lib/indexing/*`, `lib/review/context.ts` |
 
 Two distinct GitHub registrations exist — don't conflate them:
 - **GitHub App** (`GITHUB_APP_*`): the bot. Receives webhooks, reads code, posts reviews.
@@ -35,6 +36,7 @@ GitHub ──POST──▶ /api/webhooks/github (route.ts)
   3. dispatch on x-github-event:
        ping                         → 200 pong
        pull_request                 → handlePullRequest
+       push                         → handlePush
        installation(_repositories)  → handleInstallation
        anything else                → 200 ignored
   4. handler returns { status, body, background? }
@@ -63,29 +65,77 @@ GitHub ──POST──▶ /api/webhooks/github (route.ts)
 (rows are kept so review history survives).
 `installation_repositories.added/removed` → activate/deactivate those repos.
 
-### runReviewPipeline (`lib/review/pipeline.ts`)
-Current (Phase 2): fetch changed files (paginated, ≤3000 by GitHub's cap) →
-store as `reviews.changed_files` JSONB. On any error → `status=failed`,
-`error=<message>`. Status is otherwise left `pending` — Phase 4 will move it
-through `in_progress → completed`.
+### handlePush
+Only pushes to the repo's **default branch** (not deletions) and only for
+repos already indexed (`index_status != none`) → background
+`indexRepository(ref = pushed sha, budget 250s)`. Unindexed repos are left
+alone: indexing is lazy (first PR).
 
-Planned extension point — the pipeline is where Phases 3–5 plug in:
-`fetch files → retrieve context (P3) → Claude review (P4) → Semgrep (P5) →
-store findings → post PR review (P5)`.
+### runReviewPipeline (`lib/review/pipeline.ts`)
+1. fetch changed files (paginated, ≤3000 by GitHub's cap) → `reviews.changed_files`.
+   Error here → `status=failed`, `error=<message>`.
+2. `gatherContext` (**non-fatal** — failure logs and the review continues diff-only):
+   - if repo `index_status != ready` → `indexRepository` on the default branch,
+     deadline = pipeline start + 180s
+   - `retrieveContext` → `reviews.context`
+Status is otherwise left `pending` — Phase 4 moves it `in_progress → completed`.
+
+Remaining extension point: `→ Claude review (P4) → Semgrep (P5) → store
+findings → post PR review (P5)`.
+
+## 3b. Code index (Phase 3)
+
+**Indexing** — `indexRepository(repo, {ref, deadline})` in `lib/indexing/indexer.ts`:
+1. `claimIndexing` — atomic `index_status → indexing` (a claim older than 15 min
+   is considered dead and can be taken over). Lost race → `skipped`.
+2. `repos.getCommit(ref)` → `git.getTree(recursive)`; keep blobs passing
+   `shouldIndexFile` (path/extension/size rules in `filter.ts`), max 3000 files.
+3. Diff against `getIndexedFiles` (path → blob sha, from `chunk_index = 0` rows):
+   changed/new → re-index, gone → delete. **Incremental by blob sha**; the
+   same code path does the first full index and every update.
+4. Batches of 20 files: `git.getBlob` (8 concurrent) → `isIndexableContent`
+   (no NUL bytes, avg line ≤ 300 chars) → `chunkFile` → `embed(..., 'document')`
+   → `replaceFileChunks` (delete + insert per file).
+5. Past `deadline` → stop, `index_status = partial` (next run resumes).
+   Done → `ready` + `indexed_commit_sha`. Error → `failed` + `index_error`.
+
+**Chunking** — `chunkFile` (`chunker.ts`, pure): boundaries at column-0
+declarations (regex over common keywords across languages) or markdown
+`#`–`###` headings; leading comments/JSDoc/decorators attach to the
+declaration below. Units are packed to ~60 lines; units > 120 lines become
+overlapping 120-line windows (10 overlap); chunks capped at 8000 chars.
+Embedded text = `File: <path> (lines a-b)\n\n<content>`.
+
+**Embeddings** — `embed(texts, 'document' | 'query')` (`embeddings.ts`): plain
+`fetch` to Voyage, batches ≤128 inputs / ~100K est. tokens, retries 429/5xx
+with backoff (honours `retry-after`), 6 attempts.
+
+**Retrieval** — `retrieveContext(repoId, changedFiles)` (`lib/review/context.ts`):
+one query per changed file (top 20 by `changes`) = path + added/context lines
+of its patch (`queryForChange`). `match_code_chunks` RPC, 8 matches each,
+**excluding the changed files themselves** (their new content is in the
+diff; the index holds the old version). `selectContext` dedupes, drops
+similarity < 0.35, keeps the best 15 chunks / 30K chars.
 
 ## 4. Database (`lib/db/schema.sql` + `lib/db/migrations/*.sql`)
 
 Migrations are **run by hand in the Supabase SQL editor**, in order:
-`schema.sql` → `002_add_changed_files.sql` → `003_webhook_hardening.sql`.
+`schema.sql` → `002_add_changed_files.sql` → `003_webhook_hardening.sql` →
+`004_code_index.sql`.
 There is no migration runner/tracking table.
 
 | Table | Key columns | Notes |
 |---|---|---|
 | `installations` | `id` (GitHub installation id), `account_login`, `account_type` | |
-| `repositories` | `id` (GitHub repo id), `installation_id`, `full_name`, `default_branch`, `is_active` | cascade-deletes from installations |
-| `reviews` | `id uuid`, `repository_id`, `pr_number`, `commit_sha`, `status`, `changed_files jsonb`, `pr_title`, `pr_author`, `head_ref`, `base_sha`, `error`, `started_at`, `completed_at` | unique `(repository_id, pr_number, commit_sha)` |
+| `repositories` | `id` (GitHub repo id), `installation_id`, `full_name`, `default_branch`, `is_active`, `index_status` (none/indexing/ready/partial/failed), `index_started_at`, `indexed_at`, `indexed_commit_sha`, `index_error` | cascade-deletes from installations |
+| `reviews` | `id uuid`, `repository_id`, `pr_number`, `commit_sha`, `status`, `changed_files jsonb`, `context jsonb` (retrieved chunks), `pr_title`, `pr_author`, `head_ref`, `base_sha`, `error`, `started_at`, `completed_at` | unique `(repository_id, pr_number, commit_sha)` |
 | `findings` | `review_id`, `category`, `severity` (info/warning/critical), `file`, `line_start/end`, `message`, `suggestion` | unused until Phase 4 |
-| `code_chunks` | `repository_id`, `file_path`, `line_start/end`, `content`, `embedding vector(1024)` | HNSW cosine index; unused until Phase 3 |
+| `code_chunks` | `repository_id`, `file_path`, `chunk_index`, `line_start/end`, `content`, `language`, `blob_sha`, `embedding vector(1024)` | unique `(repository_id, file_path, chunk_index)`; HNSW cosine index |
+
+RPC `match_code_chunks(p_repository_id, p_embedding, p_match_count, p_exclude_paths)`
+→ nearest chunks with `similarity = 1 - cosine distance`. Runs with
+`hnsw.ef_search = 200` (repo filter is applied after the HNSW scan).
+Execute is revoked from anon/authenticated — service role only.
 
 Review status: `pending → in_progress → completed | failed`, plus `superseded`.
 
@@ -115,8 +165,15 @@ lib/
   github/payloads.ts          PURE payload types + parsers (unit-tested)
   github/handlers.ts          event handlers (DB side effects, returns HandlerResult)
   github/manifest.ts          reference GitHub App manifest (events/permissions)
+  db/code-index.ts            index state (claim/finish), chunk CRUD, matchChunks RPC
+  indexing/filter.ts          PURE shouldIndexFile / detectLanguage / isIndexableContent
+  indexing/chunker.ts         PURE chunkFile / embeddingText
+  indexing/embeddings.ts      Voyage client (batching + backoff)
+  indexing/indexer.ts         indexRepository (incremental, resumable, claim-locked)
+  review/context.ts           retrieveContext; PURE queryForChange / selectContext
   review/pipeline.ts          background review pipeline
 scripts/smoke-test.ts         env + Supabase + GitHub App checks (uses lib clients)
+scripts/index-repo.ts         npm run index-repo -- owner/name [ref]  (no time budget)
 ```
 
 ## 6. Conventions
@@ -139,7 +196,7 @@ See `.env.example`. Required now: `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`,
 `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_OAUTH_CLIENT_ID`,
 `GITHUB_OAUTH_CLIENT_SECRET`, `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`,
 `SUPABASE_SERVICE_ROLE_KEY`, `NEXTAUTH_SECRET`/`AUTH_SECRET`.
-Later: `ANTHROPIC_API_KEY` (P4), `VOYAGE_API_KEY` (P3).
+`VOYAGE_API_KEY` (P3, now required for context). Later: `ANTHROPIC_API_KEY` (P4).
 
 ## 8. Commands
 
@@ -150,3 +207,4 @@ Later: `ANTHROPIC_API_KEY` (P4), `VOYAGE_API_KEY` (P3).
 | `npm test` | unit tests |
 | `npm run typecheck` / `npm run lint` / `npm run format:check` | static checks |
 | `npm run smoke-test` | live check of env + Supabase + GitHub App |
+| `npm run index-repo -- owner/name [ref]` | index one repo now, no time budget |
