@@ -10,8 +10,8 @@
 | Phase | Scope | Status |
 |---|---|---|
 | 0–1 | Scaffold, GitHub App + OAuth App, DB schema, auth, smoke test | ✅ done, hardened 2026-10-23 |
-| 2 | Webhook & diff pipeline | ✅ verified end-to-end on PR #1 (locally); **prod needs the private-key fix merged** |
-| 3 | Codebase indexing & retrieval (RAG: chunking, Voyage embeddings, pgvector) | ⏳ not started — waiting on owner's detailed plan |
+| 2 | Webhook & diff pipeline | ✅ **done** — verified end-to-end in production on PR #1 (2026-10-24) |
+| 3 | Codebase indexing & retrieval (RAG: chunking, Voyage embeddings, pgvector) | ⏳ **next** — waiting on owner's detailed plan |
 | 4 | Review engine (Claude structured findings) | ⏳ |
 | 5 | Semgrep + posting inline PR comments / check runs | ⏳ |
 | 6 | Dashboard (repo list, review history, metrics) | ⏳ |
@@ -33,10 +33,9 @@
       review row created with correct metadata ✅. Background step **failed**
       on Vercel: `error:1E08010C:DECODER routines::unsupported` — Vercel's
       `GITHUB_APP_PRIVATE_KEY` is in a shape OpenSSL can't parse (works locally).
-- [ ] **Push `testing` and merge PR #1** (contains the private-key normalizer
-      + failed-review retry). Then Redeliver the latest `pull_request` delivery
-      → review should end `pending` with `changed_files` filled. If it still
-      fails, the new error message names exactly what's wrong with the key.
+- [x] PR #1 merged (b1e75c3). Prod redelivery of `synchronize` → `202`,
+      failed review retried → `pending` with 7 changed files + patches.
+      `opened` review correctly `superseded`; `closed` correctly ignored.
 - [ ] Consider upgrading local Node to 22 (supabase-js deprecates Node 20).
 
 Note: `installation` / `installation_repositories` events are delivered to
@@ -94,6 +93,8 @@ event settings, and `GET /app` only lists `pull_request`. That's expected.
   duplicate check. `retryFailedReview` now resets `failed` → `pending`.
 - Verified locally on the real PR #1 payload: retry → 1 changed file stored
   (patch included); second delivery → `duplicate`. Tests: 30.
+- After merge, verified in production: retry path + key normalizer work on
+  Vercel. **Phase 2 complete.**
 
 ### 2026-10-23 — Deploy check (Claude)
 - Found `SUPABASE_SERVICE_ROLE_KEY` was the publishable key (RLS exposed it).
