@@ -5,12 +5,12 @@
 > session** (status, decisions, changelog). Architecture lives in
 > [ARCHITECTURE.md](./ARCHITECTURE.md).
 
-## Current status (2026-10-23)
+## Current status (2026-10-24)
 
 | Phase | Scope | Status |
 |---|---|---|
 | 0–1 | Scaffold, GitHub App + OAuth App, DB schema, auth, smoke test | ✅ done, hardened 2026-10-23 |
-| 2 | Webhook & diff pipeline | ✅ code complete — **needs migration 003 run + live test** |
+| 2 | Webhook & diff pipeline | ✅ verified end-to-end on PR #1 (locally); **prod needs the private-key fix merged** |
 | 3 | Codebase indexing & retrieval (RAG: chunking, Voyage embeddings, pgvector) | ⏳ not started — waiting on owner's detailed plan |
 | 4 | Review engine (Claude structured findings) | ⏳ |
 | 5 | Semgrep + posting inline PR comments / check runs | ⏳ |
@@ -24,15 +24,19 @@
 - [x] Migration 003 applied (verified: new `reviews` columns exist).
 - [x] App installed on `saksham101s` (installation 174576465, 20 repos incl. ARGUS).
 - [x] Phase 2 deployed to Vercel (392fd92); signed `ping` → `pong` verified.
-- [ ] **Replace `SUPABASE_SERVICE_ROLE_KEY`** — it holds the *publishable*
-      key (`sb_publishable_…`). Worked only because RLS was off; since
-      migration 003 every write fails (42501 RLS violation → webhook 500).
-      Put the **secret** key (`sb_secret_…`, Supabase → Project Settings →
-      API Keys) in `.env.local` **and** Vercel env, then redeploy.
-- [ ] Then redeliver `installation.created` (GitHub App → Advanced → Recent
-      Deliveries) to backfill the 20 repos.
-- [ ] Confirm Vercel has all env vars from `.env.example` set.
-- [ ] Open a test PR on a repo to exercise the full Phase 2 path.
+- [x] Local `SUPABASE_SERVICE_ROLE_KEY` replaced with the secret key; smoke test 3/3.
+- [x] 20 repos backfilled into `repositories` (ran the installation handler
+      locally against the real `installation.created` payload).
+- [x] Vercel env fixed (2026-10-24): redelivered `installation.created` →
+      `200 {"status":"ok"}`; 20 active repos; smoke test 3/3.
+- [x] Test PR opened (ARGUS PR #1, branch `testing`). Prod webhook → `202`,
+      review row created with correct metadata ✅. Background step **failed**
+      on Vercel: `error:1E08010C:DECODER routines::unsupported` — Vercel's
+      `GITHUB_APP_PRIVATE_KEY` is in a shape OpenSSL can't parse (works locally).
+- [ ] **Push `testing` and merge PR #1** (contains the private-key normalizer
+      + failed-review retry). Then Redeliver the latest `pull_request` delivery
+      → review should end `pending` with `changed_files` filled. If it still
+      fails, the new error message names exactly what's wrong with the key.
 - [ ] Consider upgrading local Node to 22 (supabase-js deprecates Node 20).
 
 Note: `installation` / `installation_repositories` events are delivered to
@@ -80,6 +84,16 @@ event settings, and `GET /app` only lists `pull_request`. That's expected.
 - `lib/github/manifest.ts` URLs are localhost-only.
 
 ## Changelog
+
+### 2026-10-24 — First live PR test (Claude)
+- PR #1 exposed a Vercel-only private-key parse failure. Added
+  `lib/github/private-key.ts` (`normalizePrivateKey`): strips quotes, handles
+  literal `\n`, space-collapsed and base64-encoded PEMs, re-wraps to canonical
+  PEM, and throws an error naming `GITHUB_APP_PRIVATE_KEY` if still invalid.
+- **Bug:** a failed review could never be retried — redelivery hit the
+  duplicate check. `retryFailedReview` now resets `failed` → `pending`.
+- Verified locally on the real PR #1 payload: retry → 1 changed file stored
+  (patch included); second delivery → `duplicate`. Tests: 30.
 
 ### 2026-10-23 — Deploy check (Claude)
 - Found `SUPABASE_SERVICE_ROLE_KEY` was the publishable key (RLS exposed it).
