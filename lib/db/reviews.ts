@@ -55,6 +55,32 @@ export async function createPendingReview(
   return data?.[0] ?? null;
 }
 
+/**
+ * Resets a failed review of this exact commit back to pending, so a
+ * redelivery retries it instead of being swallowed as a duplicate.
+ * Conditional on status=failed, so concurrent redeliveries can't both win.
+ * Returns null if there is no failed review to retry.
+ */
+export async function retryFailedReview(
+  pr: PullRequestInfo,
+): Promise<{ id: string } | null> {
+  const { data, error } = await getSupabaseClient()
+    .from('reviews')
+    .update({
+      status: 'pending' satisfies ReviewStatus,
+      error: null,
+      completed_at: null,
+    })
+    .eq('repository_id', pr.repo.id)
+    .eq('pr_number', pr.number)
+    .eq('commit_sha', pr.headSha)
+    .eq('status', 'failed' satisfies ReviewStatus)
+    .select('id');
+
+  if (error) throw error;
+  return data?.[0] ?? null;
+}
+
 /** Marks older unfinished reviews of the same PR as superseded. */
 export async function supersedeOlderReviews(
   pr: PullRequestInfo,

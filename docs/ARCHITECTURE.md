@@ -49,8 +49,10 @@ GitHub ──POST──▶ /api/webhooks/github (route.ts)
    - returns `ok | ignore (200) | invalid (400)`
 2. upsert `installations` row, upsert `repositories` row (active)
 3. `createPendingReview` — upsert with `ignoreDuplicates` on
-   `(repository_id, pr_number, commit_sha)`. Existing → respond `200 duplicate`
-   and do nothing (safe GitHub retries / Redeliver).
+   `(repository_id, pr_number, commit_sha)`. If it already exists:
+   `retryFailedReview` resets it to `pending` **only if it is `failed`**
+   (conditional update, race-safe) and the pipeline reruns; otherwise respond
+   `200 duplicate` and do nothing. So Redeliver = retry for failed reviews.
 4. `supersedeOlderReviews` — older `pending`/`in_progress` reviews of the same
    PR → `superseded` (non-fatal if it fails).
 5. background: `runReviewPipeline(reviewId, pr)`.
@@ -107,7 +109,8 @@ lib/
   db/client.ts                memoized service-role Supabase client (+ ws transport)
   db/installations.ts         upsertInstallation, activate/deactivateRepositories
   db/reviews.ts               ReviewStatus, ChangedFile, create/supersede/updateReview
-  github/app.ts               getInstallationClient, getAppClient (normalizes \n in PEM)
+  github/app.ts               getInstallationClient, getAppClient
+  github/private-key.ts       normalizePrivateKey: quotes / \n / spaces / base64 → canonical PEM
   github/verify.ts            webhook HMAC verification
   github/payloads.ts          PURE payload types + parsers (unit-tested)
   github/handlers.ts          event handlers (DB side effects, returns HandlerResult)

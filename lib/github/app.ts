@@ -1,5 +1,6 @@
 import { createAppAuth } from '@octokit/auth-app';
 import { Octokit } from '@octokit/rest';
+import { normalizePrivateKey } from './private-key';
 
 /**
  * GitHub App authentication — JWT to installation token flow.
@@ -20,9 +21,7 @@ function getAppConfig() {
     );
   }
 
-  // Hosting dashboards (Vercel, etc.) often store the PEM on one line with
-  // literal "\n" sequences — restore real newlines so the key parses.
-  return { appId, privateKey: privateKey.replace(/\\n/g, '\n') };
+  return { appId, privateKey: normalizePrivateKey(privateKey) };
 }
 
 /**

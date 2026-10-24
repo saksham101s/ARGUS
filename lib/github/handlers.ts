@@ -8,7 +8,11 @@ import {
   deactivateRepositories,
   upsertInstallation,
 } from '@/lib/db/installations';
-import { createPendingReview, supersedeOlderReviews } from '@/lib/db/reviews';
+import {
+  createPendingReview,
+  retryFailedReview,
+  supersedeOlderReviews,
+} from '@/lib/db/reviews';
 import { runReviewPipeline } from '@/lib/review/pipeline';
 
 /**
@@ -45,7 +49,8 @@ export async function handlePullRequest(payload: WebhookPayload): Promise<Handle
   await upsertInstallation(pr.installation);
   await activateRepositories(pr.installation.id, [pr.repo]);
 
-  const review = await createPendingReview(pr);
+  const created = await createPendingReview(pr);
+  const review = created ?? (await retryFailedReview(pr));
   if (!review) {
     console.log(`[webhook] Review for ${label} already exists — skipping`);
     return {
@@ -53,13 +58,14 @@ export async function handlePullRequest(payload: WebhookPayload): Promise<Handle
       body: { status: 'duplicate', pr_number: pr.number },
     };
   }
+  if (!created) console.log(`[webhook] Retrying failed review ${review.id} for ${label}`);
 
   // Non-fatal: if this threw, a redelivery would hit the duplicate path
   // above and the new review's pipeline would never be scheduled.
   await supersedeOlderReviews(pr, review.id).catch((err) =>
     console.error(`[webhook] Could not supersede older reviews of ${label}`, err),
   );
-  console.log(`[webhook] Created review ${review.id} for ${label}`);
+  if (created) console.log(`[webhook] Created review ${review.id} for ${label}`);
 
   return {
     status: 202,
