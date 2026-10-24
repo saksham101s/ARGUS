@@ -126,6 +126,6 @@ This started as a solo portfolio project, but issues and PRs are welcome once th
 
 <div align="center">
 
-Built by [Saksham](https://github.com/<your-username>) · named after Argus Panoptes, the many-eyed giant of Greek myth who never slept
+Built by [Saksham](https://github.com/saksham101s) · named after Argus Panoptes, the many-eyed giant of Greek myth who never slept
 
 </div>
