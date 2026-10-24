@@ -5,12 +5,12 @@
 > session** (status, decisions, changelog). Architecture lives in
 > [ARCHITECTURE.md](./ARCHITECTURE.md).
 
-## Current status (2026-10-23)
+## Current status (2026-10-24)
 
 | Phase | Scope | Status |
 |---|---|---|
 | 0–1 | Scaffold, GitHub App + OAuth App, DB schema, auth, smoke test | ✅ done, hardened 2026-10-23 |
-| 2 | Webhook & diff pipeline | ✅ code complete — **needs migration 003 run + live test** |
+| 2 | Webhook & diff pipeline | ✅ deployed; installation path verified live — **PR path awaiting a test PR** |
 | 3 | Codebase indexing & retrieval (RAG: chunking, Voyage embeddings, pgvector) | ⏳ not started — waiting on owner's detailed plan |
 | 4 | Review engine (Claude structured findings) | ⏳ |
 | 5 | Semgrep + posting inline PR comments / check runs | ⏳ |
@@ -24,14 +24,11 @@
 - [x] Migration 003 applied (verified: new `reviews` columns exist).
 - [x] App installed on `saksham101s` (installation 174576465, 20 repos incl. ARGUS).
 - [x] Phase 2 deployed to Vercel (392fd92); signed `ping` → `pong` verified.
-- [ ] **Replace `SUPABASE_SERVICE_ROLE_KEY`** — it holds the *publishable*
-      key (`sb_publishable_…`). Worked only because RLS was off; since
-      migration 003 every write fails (42501 RLS violation → webhook 500).
-      Put the **secret** key (`sb_secret_…`, Supabase → Project Settings →
-      API Keys) in `.env.local` **and** Vercel env, then redeploy.
-- [ ] Then redeliver `installation.created` (GitHub App → Advanced → Recent
-      Deliveries) to backfill the 20 repos.
-- [ ] Confirm Vercel has all env vars from `.env.example` set.
+- [x] Local `SUPABASE_SERVICE_ROLE_KEY` replaced with the secret key; smoke test 3/3.
+- [x] 20 repos backfilled into `repositories` (ran the installation handler
+      locally against the real `installation.created` payload).
+- [x] Vercel env fixed (2026-10-24): redelivered `installation.created` →
+      `200 {"status":"ok"}`; 20 active repos; smoke test 3/3.
 - [ ] Open a test PR on a repo to exercise the full Phase 2 path.
 - [ ] Consider upgrading local Node to 22 (supabase-js deprecates Node 20).
 
