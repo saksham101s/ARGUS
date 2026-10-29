@@ -18,7 +18,16 @@ export interface Chunk {
   content: string;
 }
 
+/**
+ * Bump whenever chunking output changes. It's part of each file's stored
+ * index key, so existing indexes re-chunk on their next run — without it,
+ * incremental indexing (by blob sha) would never revisit unchanged files.
+ */
+export const CHUNKER_VERSION = 2;
+
 export const TARGET_LINES = 60;
+/** A pack this small (e.g. just imports) merges into the next unit. */
+const MIN_PACK_LINES = 15;
 export const MAX_LINES = 120;
 const OVERLAP_LINES = 10;
 /** Guards against huge single lines blowing the embedding token budget. */
@@ -98,8 +107,12 @@ export function chunkFile(path: string, content: string): Chunk[] {
       continue;
     }
 
-    // Close the current pack if adding this unit would exceed the target.
-    if (unitEnd - packStart > TARGET_LINES && unitStart > packStart) {
+    // Close the current pack if adding this unit would exceed the target —
+    // unless the pack is too small to stand alone (an import block alone
+    // is useless retrieval context) and merging still fits MAX_LINES.
+    const packTooSmall =
+      unitStart - packStart < MIN_PACK_LINES && unitEnd - packStart <= MAX_LINES;
+    if (unitEnd - packStart > TARGET_LINES && unitStart > packStart && !packTooSmall) {
       chunks.push(toChunk(lines, packStart, unitStart));
       packStart = unitStart;
     }

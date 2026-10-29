@@ -40,9 +40,12 @@
 - [ ] **Phase 3:** GitHub App → Permissions & events → tick **Push** (keeps
       the index current). Unlike installation events, push is opt-in.
 - [ ] **Phase 3:** add `VOYAGE_API_KEY` to Vercel env (it's set locally).
-- [ ] Voyage free tier is ~3 requests/min without a payment method — indexing
-      works (backoff) but is slow. Adding a card raises limits; the free
-      token allowance still applies.
+- [x] Migration 004 applied, Push event on, `phase3-indexing` pushed (2026-10-29).
+- [ ] **Merge `phase3-indexing`** once the owner is happy (prod still runs Phase 2).
+- [ ] Voyage free tier = 3 requests + 10K tokens per minute without a payment
+      method: indexing ARGUS (37 files) takes ~1.5–5 min; a large repo would
+      take far longer than the 180s in-review budget (→ `partial`, resumes).
+      Adding a card lifts this; the 200M free tokens still apply.
 - [ ] Consider upgrading local Node to 22 (supabase-js deprecates Node 20).
 
 Note: `installation` / `installation_repositories` events are delivered to
@@ -127,7 +130,21 @@ event settings, and `GET /app` only lists `pull_request`. That's expected.
   best-effort runtime `set_config`. Verified against the real DB inside a
   rolled-back transaction (migration OK, RPC OK, ef_search = 200, execute
   only for postgres/service_role).
-- `npm run index-repo` CLI. Tests: 52. Dry run on this repo: 49 files →
+- `npm run index-repo` CLI. Tests: 52.
+
+### 2026-10-29 — Phase 3 live test on ARGUS (Claude)
+- First real index failed: 20-file batches (~16K tokens) exceed Voyage's
+  free-tier 10K TPM, so retrying could never succeed. Fix 1 split on 429 —
+  but split down to single chunks, each waiting a minute (3 RPM) → ~1h.
+  Fix 2: split only above 8K est. tokens, otherwise resend after 65s.
+  Result: ARGUS indexed in 88s; **resume verified** (stopped run's 20 files
+  skipped); second run = no-op in 3s, zero Voyage calls.
+- Retrieval on PR #1's real diff: code queries relevant (handlers.ts →
+  payload parsers/pipeline/route; private-key.test.ts → verify.test.ts),
+  but doc diffs took 8/15 slots and 3 chunks were import/header-only.
+  Fixed: `pickQueryFiles` (docs only for docs-only PRs), chunker merges
+  <15-line packs into the next unit, `CHUNKER_VERSION` in the index key so
+  chunker changes re-index existing repos. Tests: 57. Dry run on this repo: 49 files →
   37 indexable → 67 chunks (median 40 lines). Found + fixed a JSDoc
   attachment bug in the chunker via the dry run.
 

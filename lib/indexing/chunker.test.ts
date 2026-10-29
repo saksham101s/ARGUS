@@ -102,3 +102,11 @@ test('embedding text carries the path and line range', () => {
     /^File: lib\/auth\.ts \(lines 1-\d+\)\n\n/,
   );
 });
+
+test('a small import block merges into the large declaration after it', () => {
+  const imports = ["import a from 'a';", "import b from 'b';", ''].join('\n');
+  const chunks = chunkFile('route.ts', imports + fn('handler', 80));
+  assert.equal(chunks.length, 1);
+  assert.match(chunks[0].content, /^import a/);
+  assert.match(chunks[0].content, /export function handler/);
+});

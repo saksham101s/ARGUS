@@ -42,6 +42,20 @@ export function queryForChange(file: ChangedFile): string | null {
   return `File: ${file.filename}\n\n${body}`.slice(0, MAX_QUERY_CHARS);
 }
 
+const isDoc = (path: string) => /\.(mdx?|txt|rst)$/i.test(path);
+
+/**
+ * Which changed files become retrieval queries. Docs only when the PR is
+ * docs-only: on real data (PR #1), doc diffs pulled in README/CLAUDE.md
+ * chunks and took over half the context budget from code that mattered.
+ * Largest changes first. Pure; exported for tests.
+ */
+export function pickQueryFiles(changedFiles: ChangedFile[]): ChangedFile[] {
+  const code = changedFiles.filter((f) => !isDoc(f.filename));
+  const pool = code.length > 0 ? code : changedFiles;
+  return [...pool].sort((a, b) => b.changes - a.changes);
+}
+
 /**
  * Merges per-query matches: one entry per chunk (best similarity wins),
  * thresholded, ranked, and cut to the context budget. Pure; exported for tests.
@@ -77,8 +91,7 @@ export async function retrieveContext(
   repositoryId: number,
   changedFiles: ChangedFile[],
 ): Promise<ContextChunk[]> {
-  const queries = [...changedFiles]
-    .sort((a, b) => b.changes - a.changes)
+  const queries = pickQueryFiles(changedFiles)
     .map((file) => ({ file, text: queryForChange(file) }))
     .filter((q): q is { file: ChangedFile; text: string } => q.text !== null)
     .slice(0, MAX_QUERY_FILES);

@@ -90,9 +90,11 @@ findings → post PR review (P5)`.
    is considered dead and can be taken over). Lost race → `skipped`.
 2. `repos.getCommit(ref)` → `git.getTree(recursive)`; keep blobs passing
    `shouldIndexFile` (path/extension/size rules in `filter.ts`), max 3000 files.
-3. Diff against `getIndexedFiles` (path → blob sha, from `chunk_index = 0` rows):
+3. Diff against `getIndexedFiles` (path → stored key, from `chunk_index = 0` rows):
    changed/new → re-index, gone → delete. **Incremental by blob sha**; the
-   same code path does the first full index and every update.
+   same code path does the first full index and every update. The stored
+   key (`code_chunks.blob_sha`) is `v<CHUNKER_VERSION>:<git blob sha>`, so
+   bumping `CHUNKER_VERSION` re-chunks every file once.
 4. Batches of 20 files: `git.getBlob` (8 concurrent) → `isIndexableContent`
    (no NUL bytes, avg line ≤ 300 chars) → `chunkFile` → `embed(..., 'document')`
    → `replaceFileChunks` (delete + insert per file).
@@ -102,17 +104,24 @@ findings → post PR review (P5)`.
 **Chunking** — `chunkFile` (`chunker.ts`, pure): boundaries at column-0
 declarations (regex over common keywords across languages) or markdown
 `#`–`###` headings; leading comments/JSDoc/decorators attach to the
-declaration below. Units are packed to ~60 lines; units > 120 lines become
+declaration below. Units are packed to ~60 lines; a pack under 15 lines
+(e.g. just imports) merges into the next unit if the result fits 120 lines;
+units > 120 lines become
 overlapping 120-line windows (10 overlap); chunks capped at 8000 chars.
 Embedded text = `File: <path> (lines a-b)\n\n<content>`.
 
 **Embeddings** — `embed(texts, 'document' | 'query')` (`embeddings.ts`): plain
-`fetch` to Voyage, batches ≤128 inputs / ~100K est. tokens, retries 429/5xx
-with backoff (honours `retry-after`), 6 attempts.
+`fetch` to Voyage, batches ≤128 inputs / ~100K est. tokens (est = chars/3).
+On 429: wait `retry-after` or 65s (limits are per minute), then — if the
+batch is > 8K est. tokens — split it in half and lower a module-level
+`tokenCap` so later batches are pre-sized; ≤ 8K batches are resent whole
+(splitting further only adds requests against the 3 RPM free-tier limit).
+5xx: exponential backoff. 6 attempts per batch.
 
 **Retrieval** — `retrieveContext(repoId, changedFiles)` (`lib/review/context.ts`):
-one query per changed file (top 20 by `changes`) = path + added/context lines
-of its patch (`queryForChange`). `match_code_chunks` RPC, 8 matches each,
+`pickQueryFiles`: code files only, unless the PR is docs-only (doc diffs
+crowded code out of the budget on PR #1); largest `changes` first, max 20.
+One query per file = path + added/context lines of its patch (`queryForChange`). `match_code_chunks` RPC, 8 matches each,
 **excluding the changed files themselves** (their new content is in the
 diff; the index holds the old version). `selectContext` dedupes, drops
 similarity < 0.35, keeps the best 15 chunks / 30K chars.

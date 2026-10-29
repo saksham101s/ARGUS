@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { queryForChange, selectContext, type ContextChunk } from './context';
+import {
+  pickQueryFiles,
+  queryForChange,
+  selectContext,
+  type ContextChunk,
+} from './context';
 import type { ChangedFile } from '@/lib/db/reviews';
 
 const file = (overrides: Partial<ChangedFile> = {}): ChangedFile => ({
@@ -67,4 +72,20 @@ test('respects the chunk-count and character budgets', () => {
 
   const big = Array.from({ length: 5 }, (_, i) => chunk(`g${i}.ts`, 1, 0.9, 12_000));
   assert.equal(selectContext(big).length, 2);
+});
+
+test('queries come from code files, largest first; docs only if docs-only', () => {
+  const files = [
+    file({ filename: 'README.md', changes: 50 }),
+    file({ filename: 'lib/a.ts', changes: 3 }),
+    file({ filename: 'lib/b.ts', changes: 9 }),
+  ];
+  assert.deepEqual(
+    pickQueryFiles(files).map((f) => f.filename),
+    ['lib/b.ts', 'lib/a.ts'],
+  );
+  assert.deepEqual(
+    pickQueryFiles([file({ filename: 'docs/x.md' })]).map((f) => f.filename),
+    ['docs/x.md'],
+  );
 });

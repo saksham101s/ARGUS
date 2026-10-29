@@ -7,7 +7,7 @@ import {
   replaceFileChunks,
   type IndexedFile,
 } from '@/lib/db/code-index';
-import { chunkFile, embeddingText } from './chunker';
+import { CHUNKER_VERSION, chunkFile, embeddingText } from './chunker';
 import { embed } from './embeddings';
 import { detectLanguage, isIndexableContent, shouldIndexFile } from './filter';
 
@@ -92,7 +92,9 @@ export async function indexRepository(
 
     // ── 2. Diff against what's already indexed ────────────────────────
     const indexed = await getIndexedFiles(repo.id);
-    const toIndex = [...wanted].filter(([path, sha]) => indexed.get(path) !== sha);
+    const toIndex = [...wanted].filter(
+      ([path, sha]) => indexed.get(path) !== indexKey(sha),
+    );
     const toDelete = [...indexed.keys()].filter((path) => !wanted.has(path));
 
     console.log(
@@ -124,7 +126,12 @@ export async function indexRepository(
         // Non-indexable content still gets a (zero-chunk) entry so the
         // file's old chunks, if any, are cleared.
         const chunks = isIndexableContent(content) ? chunkFile(path, content) : [];
-        return { path, blobSha: sha, language: detectLanguage(path) ?? 'text', chunks };
+        return {
+          path,
+          blobSha: indexKey(sha),
+          language: detectLanguage(path) ?? 'text',
+          chunks,
+        };
       });
 
       const texts = files.flatMap((f) => f.chunks.map((c) => embeddingText(f.path, c)));
@@ -167,6 +174,14 @@ export async function indexRepository(
     );
     throw err;
   }
+}
+
+/**
+ * What `code_chunks.blob_sha` stores: the git blob sha prefixed with the
+ * chunker version, so a chunker change invalidates every file once.
+ */
+function indexKey(blobSha: string): string {
+  return `v${CHUNKER_VERSION}:${blobSha}`;
 }
 
 async function mapConcurrent<T, R>(
