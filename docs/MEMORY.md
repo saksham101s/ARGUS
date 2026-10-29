@@ -11,7 +11,7 @@
 |---|---|---|
 | 0–1 | Scaffold, GitHub App + OAuth App, DB schema, auth, smoke test | ✅ done, hardened 2026-10-23 |
 | 2 | Webhook & diff pipeline | ✅ **done** — verified end-to-end in production on PR #1 (2026-10-24) |
-| 3 | Codebase indexing & retrieval (RAG: chunking, Voyage embeddings, pgvector) | ⏳ **next** — waiting on owner's detailed plan |
+| 3 | Codebase indexing & retrieval (RAG: chunking, Voyage embeddings, pgvector) | 🔧 code complete — **needs migration 004 + Push event + live test** |
 | 4 | Review engine (Claude structured findings) | ⏳ |
 | 5 | Semgrep + posting inline PR comments / check runs | ⏳ |
 | 6 | Dashboard (repo list, review history, metrics) | ⏳ |
@@ -36,6 +36,16 @@
 - [x] PR #1 merged (b1e75c3). Prod redelivery of `synchronize` → `202`,
       failed review retried → `pending` with 7 changed files + patches.
       `opened` review correctly `superseded`; `closed` correctly ignored.
+- [ ] **Phase 3:** run `lib/db/migrations/004_code_index.sql` in the SQL editor.
+- [ ] **Phase 3:** GitHub App → Permissions & events → tick **Push** (keeps
+      the index current). Unlike installation events, push is opt-in.
+- [ ] **Phase 3:** add `VOYAGE_API_KEY` to Vercel env (it's set locally).
+- [x] Migration 004 applied, Push event on, `phase3-indexing` pushed (2026-10-29).
+- [ ] **Merge `phase3-indexing`** once the owner is happy (prod still runs Phase 2).
+- [ ] Voyage free tier = 3 requests + 10K tokens per minute without a payment
+      method: indexing ARGUS (37 files) takes ~1.5–5 min; a large repo would
+      take far longer than the 180s in-review budget (→ `partial`, resumes).
+      Adding a card lifts this; the 200M free tokens still apply.
 - [ ] Consider upgrading local Node to 22 (supabase-js deprecates Node 20).
 
 Note: `installation` / `installation_repositories` events are delivered to
@@ -59,13 +69,31 @@ event settings, and `GET /app` only lists `pull_request`. That's expected.
   Supabase from the browser, policies must be written first.
 - **Tests use `node:test` + `tsx`**, no new dependency. Pure logic is split
   into `lib/github/payloads.ts` precisely so it's testable without mocks.
+- **Phase 3 (defaults, owner may override):**
+  - *Lazy indexing* — a repo is indexed on its first PR, not on install
+    (20 repos × full index would burn embedding credits for repos that may
+    never get a PR). `npm run index-repo` backfills on demand.
+  - *Re-index on push to the default branch*, incremental by git blob sha.
+  - *Git Trees + Blobs API* rather than tarball download: no new dependency,
+    and blob shas give incremental indexing for free. Cost: one API request
+    per changed file (fine under the 5000/h installation limit).
+  - *Heuristic chunker* (column-0 declarations, ~60-line packing) instead of
+    tree-sitter: language-agnostic, zero native deps. Swap-in point is
+    `chunkFile`.
+  - *voyage-code-3*, 1024-d (matches the existing schema), `document` vs
+    `query` input types. Plain fetch, not the `voyageai` SDK (still in
+    package.json, unused — can be removed).
+  - *Retrieval excludes the changed files* — their new content is in the diff.
+  - *Context is non-fatal*: no index / Voyage down → the review goes diff-only.
+  - Index budget inside a review: 180s of the 300s route limit. Big repos
+    finish over several runs (`partial` → resume).
 - `reviews.changed_files` stays JSONB (no files table) until Phase 4 needs
   per-line mapping.
 
 ## Open questions for the owner
 
-- Phase 3: index on install (full repo) vs lazily on first PR? Re-index on
-  push to default branch? Chunking strategy (by function/AST vs fixed lines)?
+- Phase 3 defaults were chosen without the owner's plan (see Decisions) —
+  owner may override any of them.
 - Phase 4: which Claude model / cost ceiling per review? Max diff size before
   we skip or summarize?
 - Phase 5: post as a single PR review with inline comments, or a Check Run
@@ -76,13 +104,49 @@ event settings, and `GET /app` only lists `pull_request`. That's expected.
 ## Known gaps / tech debt
 
 - No migration runner; migrations are applied by hand.
-- `findings` / `code_chunks` tables exist but are unused.
+- `findings` table exists but is unused (Phase 4).
+- Files that produce zero chunks (empty/minified/binary) aren't recorded in
+  the index, so they're re-downloaded on every index run. Cheap, but could
+  store a sentinel row.
+- Indexing time competes with Phase 4's LLM time inside one `after()`;
+  revisit with a queue if first-PR reviews start timing out.
 - Reviews stay `pending` after files are fetched (nothing consumes them yet).
 - `patch` is null for binary/huge files — Phase 4 must fetch contents.
 - README's `/docs/setup.md` link and `<your-username>` placeholders are unfilled.
 - `lib/github/manifest.ts` URLs are localhost-only.
 
 ## Changelog
+
+### 2026-10-24 — Phase 3: codebase indexing & retrieval (Claude)
+- Migration 004: repo index state, chunk `blob_sha`/`chunk_index`/`language`,
+  `reviews.context`, `match_code_chunks` RPC (service-role only).
+- `lib/indexing/` filter, chunker, Voyage embeddings, incremental indexer;
+  `lib/db/code-index.ts`; `lib/review/context.ts` retrieval.
+- Pipeline: lazy index on first PR + context retrieval (non-fatal).
+- `push` webhook → incremental re-index of indexed repos.
+- Fix (2026-10-29): migration 004 failed in the SQL editor with `42501
+  permission denied to set parameter "hnsw.ef_search"` — Supabase rejects
+  it as a function `SET` attribute. Function is now plpgsql with a
+  best-effort runtime `set_config`. Verified against the real DB inside a
+  rolled-back transaction (migration OK, RPC OK, ef_search = 200, execute
+  only for postgres/service_role).
+- `npm run index-repo` CLI. Tests: 52.
+
+### 2026-10-29 — Phase 3 live test on ARGUS (Claude)
+- First real index failed: 20-file batches (~16K tokens) exceed Voyage's
+  free-tier 10K TPM, so retrying could never succeed. Fix 1 split on 429 —
+  but split down to single chunks, each waiting a minute (3 RPM) → ~1h.
+  Fix 2: split only above 8K est. tokens, otherwise resend after 65s.
+  Result: ARGUS indexed in 88s; **resume verified** (stopped run's 20 files
+  skipped); second run = no-op in 3s, zero Voyage calls.
+- Retrieval on PR #1's real diff: code queries relevant (handlers.ts →
+  payload parsers/pipeline/route; private-key.test.ts → verify.test.ts),
+  but doc diffs took 8/15 slots and 3 chunks were import/header-only.
+  Fixed: `pickQueryFiles` (docs only for docs-only PRs), chunker merges
+  <15-line packs into the next unit, `CHUNKER_VERSION` in the index key so
+  chunker changes re-index existing repos. Tests: 57. Dry run on this repo: 49 files →
+  37 indexable → 67 chunks (median 40 lines). Found + fixed a JSDoc
+  attachment bug in the chunker via the dry run.
 
 ### 2026-10-24 — First live PR test (Claude)
 - PR #1 exposed a Vercel-only private-key parse failure. Added

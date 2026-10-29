@@ -1,6 +1,7 @@
 import {
   parseInstallationEvent,
   parsePullRequestEvent,
+  parsePushEvent,
   type WebhookPayload,
 } from './payloads';
 import {
@@ -13,7 +14,12 @@ import {
   retryFailedReview,
   supersedeOlderReviews,
 } from '@/lib/db/reviews';
+import { getIndexStatus } from '@/lib/db/code-index';
+import { indexRepository } from '@/lib/indexing/indexer';
 import { runReviewPipeline } from '@/lib/review/pipeline';
+
+/** Leaves headroom under the route's maxDuration (300s). */
+const PUSH_INDEX_BUDGET_MS = 250_000;
 
 /**
  * Webhook event handlers. Each returns the HTTP response to send GitHub and,
@@ -106,4 +112,43 @@ export async function handleInstallation(
   );
 
   return { status: 200, body: { status: 'ok', installation_id: instId } };
+}
+
+/**
+ * Keeps the code index current: a push to the default branch re-indexes
+ * the changed files (incremental — unchanged blobs are skipped).
+ * Repos that were never indexed are left alone; indexing is lazy and
+ * starts with the repo's first PR.
+ */
+export async function handlePush(payload: WebhookPayload): Promise<HandlerResult> {
+  const parsed = parsePushEvent(payload);
+  if (parsed.kind === 'ignore') return ignored(parsed.reason);
+  if (parsed.kind === 'invalid') return invalid(parsed.reason);
+
+  const push = parsed.data;
+  const status = await getIndexStatus(push.repo.id);
+  if (status === null || status === 'none') {
+    return ignored('repository not indexed yet');
+  }
+
+  console.log(
+    `[webhook] Push to ${push.repo.fullName}@${push.headSha.slice(0, 7)} — re-indexing`,
+  );
+  return {
+    status: 202,
+    body: { status: 'accepted', repo: push.repo.fullName },
+    background: async () => {
+      await indexRepository(
+        {
+          id: push.repo.id,
+          owner: push.repo.owner,
+          name: push.repo.name,
+          installationId: push.installationId,
+        },
+        { ref: push.headSha, deadline: Date.now() + PUSH_INDEX_BUDGET_MS },
+      ).catch(() => {
+        // Already logged and recorded on the repo row by the indexer.
+      });
+    },
+  };
 }

@@ -3,6 +3,7 @@ import { verifyWebhookSignature } from '@/lib/github/verify';
 import {
   handleInstallation,
   handlePullRequest,
+  handlePush,
   type HandlerResult,
 } from '@/lib/github/handlers';
 import type { WebhookPayload } from '@/lib/github/payloads';
@@ -16,6 +17,7 @@ export const maxDuration = 300;
  *
  * Handles:
  * - pull_request (opened, reopened, synchronize, ready_for_review)
+ * - push to the default branch (keeps the code index current)
  * - installation, installation_repositories (keeps the repo list in sync)
  * - ping (sent once when the webhook is created)
  *
@@ -70,6 +72,9 @@ export async function POST(request: NextRequest) {
         break;
       case 'pull_request':
         result = await handlePullRequest(payload);
+        break;
+      case 'push':
+        result = await handlePush(payload);
         break;
       case 'installation':
       case 'installation_repositories':

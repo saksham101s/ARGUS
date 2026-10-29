@@ -1,5 +1,6 @@
 import { getSupabaseClient } from './client';
 import type { PullRequestInfo } from '@/lib/github/payloads';
+import type { ContextChunk } from '@/lib/review/context';
 
 /**
  * Review lifecycle:
@@ -101,6 +102,7 @@ export async function updateReview(
   fields: {
     status?: ReviewStatus;
     changed_files?: ChangedFile[];
+    context?: ContextChunk[];
     started_at?: string;
     completed_at?: string;
     error?: string | null;

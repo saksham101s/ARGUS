@@ -32,6 +32,10 @@ export interface WebhookPayload {
     head?: { sha?: string; ref?: string };
     base?: { sha?: string };
   };
+  // push
+  ref?: string;
+  after?: string;
+  deleted?: boolean;
 }
 
 export interface InstallationInfo {
@@ -200,4 +204,38 @@ export function parseInstallationEvent(
     default:
       return { kind: 'ignore', reason: `${event} action: ${action}` };
   }
+}
+
+export interface PushInfo {
+  installationId: number;
+  repo: RepoInfo & { owner: string; name: string };
+  headSha: string;
+}
+
+/**
+ * Only pushes to the default branch matter: that's what the index mirrors.
+ * Feature-branch code reaches the reviewer through the PR diff instead.
+ */
+export function parsePushEvent(payload: WebhookPayload): Parsed<PushInfo> {
+  // Push payloads carry only the installation id (no account), so this is
+  // deliberately not parseInstallation — nothing here may upsert the
+  // installation row with placeholder account data.
+  const installationId = payload.installation?.id;
+  const repo = parseRepo(payload.repository);
+  if (typeof installationId !== 'number' || !repo || !repo.defaultBranch) {
+    return { kind: 'invalid', reason: 'missing required payload fields' };
+  }
+
+  if (payload.ref !== `refs/heads/${repo.defaultBranch}`) {
+    return { kind: 'ignore', reason: `push to non-default ref: ${payload.ref}` };
+  }
+  if (payload.deleted || !payload.after || /^0+$/.test(payload.after)) {
+    return { kind: 'ignore', reason: 'branch deleted' };
+  }
+
+  const [owner, name] = repo.fullName.split('/');
+  return {
+    kind: 'ok',
+    data: { installationId, repo: { ...repo, owner, name }, headSha: payload.after },
+  };
 }
