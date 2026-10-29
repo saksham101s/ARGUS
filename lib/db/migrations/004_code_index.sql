@@ -32,9 +32,13 @@ alter table reviews
 
 -- ── Similarity search ──────────────────────────────────────────────────
 -- PostgREST can't express vector operators, so retrieval goes through RPC.
+--
 -- ef_search is raised because the repository_id filter is applied after
 -- the HNSW scan: with many repos indexed, the default (40) can leave too
--- few candidates from the target repo.
+-- few candidates from the target repo. It's set at call time, best-effort:
+-- Supabase rejects `SET hnsw.ef_search` as a function attribute
+-- ("permission denied to set parameter"), and if the runtime set_config is
+-- ever refused too, the search still works with the default.
 create or replace function match_code_chunks(
   p_repository_id bigint,
   p_embedding     vector(1024),
@@ -49,17 +53,25 @@ returns table (
   content    text,
   similarity double precision
 )
-language sql stable
-set hnsw.ef_search = 200
+language plpgsql
 as $$
-  select c.id, c.file_path, c.line_start, c.line_end, c.content,
-         1 - (c.embedding <=> p_embedding) as similarity
-  from code_chunks c
-  where c.repository_id = p_repository_id
-    and c.embedding is not null
-    and not (c.file_path = any (p_exclude_paths))
-  order by c.embedding <=> p_embedding
-  limit p_match_count;
+begin
+  begin
+    perform set_config('hnsw.ef_search', '200', true);  -- transaction-local
+  exception when others then
+    null;
+  end;
+
+  return query
+    select c.id, c.file_path, c.line_start, c.line_end, c.content,
+           1 - (c.embedding <=> p_embedding) as similarity
+    from code_chunks c
+    where c.repository_id = p_repository_id
+      and c.embedding is not null
+      and not (c.file_path = any (p_exclude_paths))
+    order by c.embedding <=> p_embedding
+    limit p_match_count;
+end;
 $$;
 
 -- Supabase exposes public functions over REST to anon/authenticated by

@@ -121,6 +121,12 @@ event settings, and `GET /app` only lists `pull_request`. That's expected.
   `lib/db/code-index.ts`; `lib/review/context.ts` retrieval.
 - Pipeline: lazy index on first PR + context retrieval (non-fatal).
 - `push` webhook → incremental re-index of indexed repos.
+- Fix (2026-10-29): migration 004 failed in the SQL editor with `42501
+  permission denied to set parameter "hnsw.ef_search"` — Supabase rejects
+  it as a function `SET` attribute. Function is now plpgsql with a
+  best-effort runtime `set_config`. Verified against the real DB inside a
+  rolled-back transaction (migration OK, RPC OK, ef_search = 200, execute
+  only for postgres/service_role).
 - `npm run index-repo` CLI. Tests: 52. Dry run on this repo: 49 files →
   37 indexable → 67 chunks (median 40 lines). Found + fixed a JSDoc
   attachment bug in the chunker via the dry run.

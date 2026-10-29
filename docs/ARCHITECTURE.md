@@ -133,8 +133,10 @@ There is no migration runner/tracking table.
 | `code_chunks` | `repository_id`, `file_path`, `chunk_index`, `line_start/end`, `content`, `language`, `blob_sha`, `embedding vector(1024)` | unique `(repository_id, file_path, chunk_index)`; HNSW cosine index |
 
 RPC `match_code_chunks(p_repository_id, p_embedding, p_match_count, p_exclude_paths)`
-→ nearest chunks with `similarity = 1 - cosine distance`. Runs with
-`hnsw.ef_search = 200` (repo filter is applied after the HNSW scan).
+→ nearest chunks with `similarity = 1 - cosine distance`. plpgsql; raises
+`hnsw.ef_search` to 200 via a best-effort transaction-local `set_config` at
+call time (repo filter is applied after the HNSW scan). Supabase refuses
+`SET hnsw.ef_search` as a function attribute (42501), hence the runtime call.
 Execute is revoked from anon/authenticated — service role only.
 
 Review status: `pending → in_progress → completed | failed`, plus `superseded`.
