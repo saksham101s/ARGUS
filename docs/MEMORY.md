@@ -11,7 +11,7 @@
 |---|---|---|
 | 0–1 | Scaffold, GitHub App + OAuth App, DB schema, auth, smoke test | ✅ done, hardened 2026-10-23 |
 | 2 | Webhook & diff pipeline | ✅ **done** — verified end-to-end in production on PR #1 (2026-10-24) |
-| 3 | Codebase indexing & retrieval (RAG: chunking, Voyage embeddings, pgvector) | 🔧 code complete — **needs migration 004 + Push event + live test** |
+| 3 | Codebase indexing & retrieval (RAG: chunking, Voyage embeddings, pgvector) | ✅ **done** — merged (c3b159a, PR #2); ARGUS indexed + retrieval verified on real data |
 | 4 | Review engine (Claude structured findings) | ⏳ |
 | 5 | Semgrep + posting inline PR comments / check runs | ⏳ |
 | 6 | Dashboard (repo list, review history, metrics) | ⏳ |
@@ -41,7 +41,9 @@
       the index current). Unlike installation events, push is opt-in.
 - [ ] **Phase 3:** add `VOYAGE_API_KEY` to Vercel env (it's set locally).
 - [x] Migration 004 applied, Push event on, `phase3-indexing` pushed (2026-10-29).
-- [ ] **Merge `phase3-indexing`** once the owner is happy (prod still runs Phase 2).
+- [x] `phase3-indexing` merged as PR #2 (c3b159a, 2026-10-29).
+- [ ] Open a new PR to see the first production review with context
+      (PR #2's own review ran on pre-merge Phase 2 code → `context` empty).
 - [ ] Voyage free tier = 3 requests + 10K tokens per minute without a payment
       method: indexing ARGUS (37 files) takes ~1.5–5 min; a large repo would
       take far longer than the 180s in-review budget (→ `partial`, resumes).
@@ -116,6 +118,11 @@ event settings, and `GET /app` only lists `pull_request`. That's expected.
 - `lib/github/manifest.ts` URLs are localhost-only.
 
 ## Changelog
+
+### 2026-10-29 — Diagnostic scripts + command reference (Claude)
+- `npm run status` / `retrieve` / `redeliver` replace the throwaway
+  verification scripts used during Phases 2–3. `docs/COMMANDS.md` lists
+  every command.
 
 ### 2026-10-24 — Phase 3: codebase indexing & retrieval (Claude)
 - Migration 004: repo index state, chunk `blob_sha`/`chunk_index`/`language`,

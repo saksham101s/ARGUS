@@ -185,6 +185,9 @@ lib/
   review/pipeline.ts          background review pipeline
 scripts/smoke-test.ts         env + Supabase + GitHub App checks (uses lib clients)
 scripts/index-repo.ts         npm run index-repo -- owner/name [ref]  (no time budget)
+scripts/status.ts             npm run status — deliveries, reviews, index state
+scripts/retrieve.ts           npm run retrieve -- <review id> — inspect retrieval (read-only)
+scripts/redeliver.ts          npm run redeliver -- <event>.<action> — replay a webhook to prod
 ```
 
 ## 6. Conventions
@@ -219,3 +222,6 @@ See `.env.example`. Required now: `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`,
 | `npm run typecheck` / `npm run lint` / `npm run format:check` | static checks |
 | `npm run smoke-test` | live check of env + Supabase + GitHub App |
 | `npm run index-repo -- owner/name [ref]` | index one repo now, no time budget |
+| `npm run status` / `retrieve` / `redeliver` | live diagnostics — see [COMMANDS.md](./COMMANDS.md) |
+
+Full command reference with examples: [COMMANDS.md](./COMMANDS.md).

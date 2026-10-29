@@ -12,7 +12,10 @@
     "smoke-test": "tsx scripts/smoke-test.ts",
     "test": "tsx --test lib/*/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "index-repo": "tsx scripts/index-repo.ts"
+    "index-repo": "tsx scripts/index-repo.ts",
+    "status": "tsx scripts/status.ts",
+    "retrieve": "tsx scripts/retrieve.ts",
+    "redeliver": "tsx scripts/redeliver.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
